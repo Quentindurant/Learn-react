@@ -2,7 +2,7 @@ name: Deploy (simple)
 
 on:
   push:
-    branches: [ master ]   # change en "main" si besoin
+    branches: [ master ]   # mets "main" si ta branche par défaut est main
   workflow_dispatch:
 
 jobs:
@@ -13,20 +13,22 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
-          username: ${{ secretsVPS_USER }}
+          username: ${{ secrets.VPS_USER }}          # <- le point !
           port: ${{ secrets.VPS_PORT }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}   # ou password: ${{ secrets.VPS_PASSWORD }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}        # ou remplace par: password: ${{ secrets.VPS_PASSWORD }}
           script_stop: true
           script: |
             set -e
             cd "${{ secrets.VPS_PATH }}"
             git fetch --all --tags
             git reset --hard origin/master
+
             # (optionnel) build si projet Node
             if [ -f package.json ]; then
               npm ci
-              if jq -e '.scripts.build' package.json >/dev/null 2>&1; then npm run build; fi
+              npm run build || true   # ne casse pas si pas de script build
             fi
-            # (optionnel) rechargement web
+
+            # (optionnel) reload web
             sudo systemctl reload nginx 2>/dev/null || true
             sudo systemctl reload apache2 2>/dev/null || true
