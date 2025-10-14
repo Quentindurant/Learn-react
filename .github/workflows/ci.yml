@@ -1,34 +1,15 @@
-name: Deploy (simple)
+name: Ping
 
 on:
-  push:
-    branches: [ master ]   # mets "main" si ta branche par défaut est main
+  push:            # n'importe quel push, n'importe quelle branche
   workflow_dispatch:
 
 jobs:
-  deploy:
+  ping:
     runs-on: ubuntu-latest
     steps:
-      - name: SSH deploy
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}          # <- le point !
-          port: ${{ secrets.VPS_PORT }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}        # ou remplace par: password: ${{ secrets.VPS_PASSWORD }}
-          script_stop: true
-          script: |
-            set -e
-            cd "${{ secrets.VPS_PATH }}"
-            git fetch --all --tags
-            git reset --hard origin/master
-
-            # (optionnel) build si projet Node
-            if [ -f package.json ]; then
-              npm ci
-              npm run build || true   # ne casse pas si pas de script build
-            fi
-
-            # (optionnel) reload web
-            sudo systemctl reload nginx 2>/dev/null || true
-            sudo systemctl reload apache2 2>/dev/null || true
+      - name: Show branch and time
+        run: |
+          echo "✅ Workflow triggered."
+          echo "Branch: $GITHUB_REF"
+          date
