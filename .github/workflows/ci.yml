@@ -12,20 +12,29 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 1 }
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Detect JS project
         id: detect
         shell: bash
         run: |
-          if [ -f package.json ]; then echo "js=true" >> $GITHUB_OUTPUT; else echo "js=false" >> $GITHUB_OUTPUT; fi
+          if [ -f package.json ]; then
+            echo "js=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "js=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Setup Node
         if: steps.detect.outputs.js == 'true'
         uses: actions/setup-node@v4
-        with: { node-version: ${{ env.NODE_VERSION }}, cache: 'npm' }
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
       - name: Install deps
         if: steps.detect.outputs.js == 'true'
@@ -33,23 +42,30 @@ jobs:
 
       - name: Build (auto)
         if: steps.detect.outputs.js == 'true'
-        run: if jq -e '.scripts.build' package.json >/dev/null 2>&1; then npm run build; fi
+        run: |
+          if jq -e '.scripts.build' package.json >/dev/null 2>&1; then
+            npm run build
+          fi
 
       - name: Package
+        shell: bash
         run: |
           RELEASE_NAME="release_${GITHUB_SHA:0:7}_$(date +%Y%m%d%H%M%S)"
-          echo "RELEASE_NAME=$RELEASE_NAME" >> $GITHUB_ENV
+          echo "RELEASE_NAME=$RELEASE_NAME" >> "$GITHUB_ENV"
+
           EXCLUDES="--exclude .git --exclude .github --exclude .DS_Store"
           if [ -n "${{ secrets.RSYNC_EXCLUDES }}" ]; then
             IFS=',' read -ra ARR <<< "${{ secrets.RSYNC_EXCLUDES }}"
             for e in "${ARR[@]}"; do EXCLUDES="$EXCLUDES --exclude $e"; done
           fi
+
           mkdir -p dist_upload
           tar czf "dist_upload/${RELEASE_NAME}.tgz" $EXCLUDES .
 
       - name: SSH agent
         uses: webfactory/ssh-agent@v0.9.0
-        with: { ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }} }
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: known_hosts (custom port)
         run: |
@@ -57,7 +73,7 @@ jobs:
           ssh-keyscan -p ${{ secrets.VPS_PORT }} -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
       - name: Upload archive
-        run: scp -P ${{ secrets.VPS_PORT }} "dist_upload/${RELEASE_NAME}.tgz" ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/
+        run: scp -P ${{ secrets.VPS_PORT }} "dist_upload/${{ env.RELEASE_NAME }}.tgz" ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/
 
       - name: Deploy (atomic symlink)
         env:
@@ -69,29 +85,58 @@ jobs:
           RELEASE_NAME: ${{ env.RELEASE_NAME }}
           PM2_APP_NAME: ${{ secrets.PM2_APP_NAME }}
         run: |
-          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" bash << 'EOF'
+          # on injecte les variables dans le shell distant (et on échappe $USER côté remote)
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" bash << EOF
           set -euo pipefail
-          BASE="$VPS_PATH"; RELEASES="$BASE/releases"; SHARED="$BASE/shared"; CURRENT="$BASE/current"; NEW="$RELEASES/$RELEASE_NAME"
-          sudo mkdir -p "$RELEASES" "$SHARED" "$NEW"
-          sudo tar xzf "/tmp/${RELEASE_NAME}.tgz" -C "$NEW"; sudo rm -f "/tmp/${RELEASE_NAME}.tgz"
-          [ -f "$SHARED/.env" ] && sudo ln -sfn "$SHARED/.env" "$NEW/.env"
-          sudo chown -R $USER:www-data "$BASE"
-          sudo find "$NEW" -type d -exec chmod 2775 {} \;
-          sudo find "$NEW" -type f -exec chmod 0664 {} \;
+          VPS_PATH="$VPS_PATH"
+          KEEP_RELEASES="$KEEP_RELEASES"
+          RELEASE_NAME="$RELEASE_NAME"
+          PM2_APP_NAME="${PM2_APP_NAME:-}"
 
-          if [ -f "$NEW/package.json" ]; then cd "$NEW"; npm ci --omit=dev || true; fi
-          if [ -f "$NEW/composer.json" ]; then cd "$NEW"; composer install --no-dev --optimize-autoloader --no-interaction || true; fi
+          BASE="\$VPS_PATH"
+          RELEASES="\$BASE/releases"
+          SHARED="\$BASE/shared"
+          CURRENT="\$BASE/current"
+          NEW="\$RELEASES/\$RELEASE_NAME"
 
-          sudo ln -sfn "$NEW" "$CURRENT"
+          sudo mkdir -p "\$RELEASES" "\$SHARED" "\$NEW"
+          sudo tar xzf "/tmp/\$RELEASE_NAME.tgz" -C "\$NEW"
+          sudo rm -f "/tmp/\$RELEASE_NAME.tgz"
 
-          if command -v pm2 >/dev/null 2>&1 && [ -n "${PM2_APP_NAME:-}" ]; then
-            cd "$CURRENT"; pm2 reload "$PM2_APP_NAME" || pm2 start "npm -- start" --name "$PM2_APP_NAME"; pm2 save
+          [ -f "\$SHARED/.env" ] && sudo ln -sfn "\$SHARED/.env" "\$NEW/.env"
+
+          # droits; \$USER est bien celui du serveur (pas du runner)
+          sudo chown -R \${USER}:www-data "\$BASE"
+          sudo find "\$NEW" -type d -exec chmod 2775 {} \;
+          sudo find "\$NEW" -type f -exec chmod 0664 {} \;
+
+          if [ -f "\$NEW/package.json" ]; then
+            cd "\$NEW"
+            npm ci --omit=dev || true
           fi
-          command -v systemctl >/dev/null 2>&1 && { sudo systemctl reload apache2 2>/dev/null || true; sudo systemctl reload nginx 2>/dev/null || true; }
 
-          COUNT=$(ls -1dt "$RELEASES"/release_* | wc -l || echo 0)
-          if [ "$COUNT" -gt "$KEEP_RELEASES" ]; then
-            ls -1dt "$RELEASES"/release_* | tail -n +"$((KEEP_RELEASES+1))" | xargs -r sudo rm -rf
+          if [ -f "\$NEW/composer.json" ]; then
+            cd "\$NEW"
+            composer install --no-dev --optimize-autoloader --no-interaction || true
           fi
-          echo "✅ Deployed $RELEASE_NAME → $CURRENT"
+
+          sudo ln -sfn "\$NEW" "\$CURRENT"
+
+          if command -v pm2 >/dev/null 2>&1 && [ -n "\${PM2_APP_NAME:-}" ]; then
+            cd "\$CURRENT"
+            pm2 reload "\$PM2_APP_NAME" || pm2 start "npm -- start" --name "\$PM2_APP_NAME"
+            pm2 save
+          fi
+
+          command -v systemctl >/dev/null 2>&1 && {
+            sudo systemctl reload apache2 2>/dev/null || true
+            sudo systemctl reload nginx 2>/dev/null || true
+          }
+
+          COUNT=\$(ls -1dt "\$RELEASES"/release_* 2>/dev/null | wc -l || echo 0)
+          if [ "\$COUNT" -gt "\$KEEP_RELEASES" ]; then
+            ls -1dt "\$RELEASES"/release_* | tail -n "\$((KEEP_RELEASES+1))" | xargs -r sudo rm -rf
+          fi
+
+          echo "✅ Deployed \$RELEASE_NAME → \$CURRENT"
           EOF
