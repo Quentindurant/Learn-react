@@ -1,15 +1,39 @@
-name: Ping
+name: Deploy to VPS
 
 on:
-  push:            # n'importe quel push, n'importe quelle branche
+  push:
+    branches: [ main ]       # ta branche par défaut
   workflow_dispatch:
 
 jobs:
-  ping:
+  deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Show branch and time
-        run: |
-          echo "✅ Workflow triggered."
-          echo "Branch: $GITHUB_REF"
-          date
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}   # ou : password: ${{ secrets.VPS_PASSWORD }}
+          script_stop: true
+          script: |
+            set -e
+            echo "🚀 Déploiement sur le VPS..."
+            cd "${{ secrets.VPS_PATH }}"
+            git fetch --all --tags
+            git reset --hard origin/main
+            echo "✅ Code mis à jour"
+
+            # Optionnel : build si projet React / Node
+            if [ -f package.json ]; then
+              npm ci || npm install
+              npm run build || true
+              echo "✅ Build terminé"
+            fi
+
+            # Redémarre les services web si présents
+            sudo systemctl reload nginx 2>/dev/null || true
+            sudo systemctl reload apache2 2>/dev/null || true
+            echo "✅ Services rechargés"
