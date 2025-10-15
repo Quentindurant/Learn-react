@@ -1,39 +1,31 @@
-name: Deploy (simple)
+name: Deploy (password)
 
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
 
-env:
-  DEPLOY_BRANCH: main   # mets "master" si besoin
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: SSH deploy
+      - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
           port: ${{ secrets.VPS_PORT }}
-          # Choisis UNE méthode d'auth :
-          key: ${{ secrets.SSH_PRIVATE_KEY }}         # recommandé
-          # password: ${{ secrets.VPS_PASSWORD }}     # sinon, mot de passe
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
           script_stop: true
           script: |
             set -e
             cd "${{ secrets.VPS_PATH }}"
-            # S'assure que c'est bien un repo git et le met à jour
-            git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "❌ Pas de dépôt Git ici"; exit 1; }
             git fetch --all --tags
-            git reset --hard "origin/${DEPLOY_BRANCH}"
-            # (optionnel) build si Node
+            git reset --hard origin/main || git reset --hard origin/master
             if [ -f package.json ]; then
               npm ci || npm install
               npm run build || true
             fi
-            # (optionnel) reload web
             sudo systemctl reload nginx 2>/dev/null || true
             sudo systemctl reload apache2 2>/dev/null || true
+            echo "✅ Déploiement terminé"
