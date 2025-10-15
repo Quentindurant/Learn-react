@@ -15,17 +15,37 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           port: ${{ secrets.VPS_PORT }}
           username: ${{ secrets.VPS_USER }}
-          password: ${{ secrets.VPS_PASSWORD }}
+          password: ${{ secrets.VPS_PASSWORD }}  # ou key: ${{ secrets.SSH_PRIVATE_KEY }}
           script_stop: true
           script: |
             set -e
             cd "${{ secrets.VPS_PATH }}"
-            sudo git fetch --all --tags
-            sudo git reset --hard origin/main || sudo git reset --hard origin/master
+
+            # 0) NE PLUS UTILISER sudo pour git/npm : on remet les droits une bonne fois
+            sudo chown -R $USER:$USER .
+
+            # 1) Git update (sans sudo)
+            git fetch --all --tags
+            git reset --hard origin/main || git reset --hard origin/master
+
+            # 2) Node : réparer droits & installer correctement
             if [ -f package.json ]; then
-              npm ci || npm install
+              # si un ancien run a créé node_modules en root, on répare
+              [ -d node_modules ] && sudo chown -R $USER:$USER node_modules || true
+
+              # npm ci seulement si lockfile présent, sinon npm install
+              if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+                npm ci --no-audit --no-fund
+              else
+                npm install --no-audit --no-fund
+              fi
+
+              # build facultatif
               npm run build || true
             fi
+
+            # 3) reload web (si présent)
             sudo systemctl reload nginx 2>/dev/null || true
             sudo systemctl reload apache2 2>/dev/null || true
+
             echo "✅ Déploiement terminé"
