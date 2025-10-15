@@ -1,4 +1,4 @@
-name: Deploy (with-npm)
+name: Deploy (no-npm)
 
 on:
   push:
@@ -15,50 +15,15 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           port: ${{ secrets.VPS_PORT }}
           username: ${{ secrets.VPS_USER }}
-          password: ${{ secrets.VPS_PASSWORD }}   # ou key: ${{ secrets.SSH_PRIVATE_KEY }}
+          password: ${{ secrets.VPS_PASSWORD }}  # ou key: ${{ secrets.SSH_PRIVATE_KEY }}
           script_stop: true
           script: |
             set -e
             cd "${{ secrets.VPS_PATH }}"
-
-            # 0) droits propres
+            # remets les droits proprement (évite les 'Permission denied')
             sudo chown -R $USER:$USER .
-            sudo rm -f .git/index.lock 2>/dev/null || true
-
-            # 1) Git
             git fetch --all --tags
             git reset --hard origin/main || git reset --hard origin/master
-
-            # 2) NPM (optionnel mais verbeux et tolérant)
-            if [ -f package.json ]; then
-              echo "ℹ️ Node/NPM versions :"
-              node -v 2>/dev/null || echo "node non installé"
-              npm -v 2>/dev/null || echo "npm non installé"
-
-              if command -v npm >/dev/null 2>&1; then
-                # réparer node_modules si root-isé
-                [ -d node_modules ] && sudo chown -R $USER:$USER node_modules || true
-
-                # choisir ci vs install selon lockfile
-                if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-                  echo "ℹ️ npm ci…"
-                  npm ci --no-audit --no-fund --loglevel verbose || { echo "❌ npm ci a échoué"; exit 1; }
-                else
-                  echo "ℹ️ npm install (pas de lockfile)…"
-                  npm install --no-audit --no-fund --loglevel verbose || { echo "❌ npm install a échoué"; exit 1; }
-                fi
-
-                # build (non bloquant)
-                echo "ℹ️ npm run build (si présent)…"
-                npm run build || echo "⚠️ build ignoré (script absent/échoué)"
-              else
-                echo "⚠️ npm absent, étape Node ignorée"
-              fi
-            else
-              echo "ℹ️ Pas de package.json : étape npm ignorée"
-            fi
-
-            # 3) Reload web
             sudo systemctl reload nginx 2>/dev/null || true
             sudo systemctl reload apache2 2>/dev/null || true
-            echo "✅ Déploiement terminé"
+            echo "✅ Déploiement terminé (sans npm)"
