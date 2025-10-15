@@ -20,8 +20,8 @@ jobs:
           script: |
             set -e
             cd "${{ secrets.VPS_PATH }}"
-            git fetch --all --tags
-            git reset --hard origin/main || git reset --hard origin/master
+            sudo git fetch --all --tags
+            sudo git reset --hard origin/main || sudo git reset --hard origin/master
             if [ -f package.json ]; then
               npm ci || npm install
               npm run build || true
