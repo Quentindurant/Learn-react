@@ -1,16 +1,18 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageLayout } from "@/layout";
 import { VIDEOS } from "../data";
+import Link from "next/link";
+import { notFound } from "next/navigation";
 //async sert a fair un serveur component 
 export default async function Page(props:{
     params: Promise<{videoId:string}>;
 } ) {
   const params = await props.params; // grace a async, ce code est executé coté serveur
   const video = VIDEOS.find((video) => video.id === params.videoId);
-
+  await new Promise((resolve) => setTimeout(resolve, 3000));
   //si pas de video
   if (!video) {
-    return <p>invalid video</p>;
+    notFound();
   }
   return (
     <PageLayout>
@@ -27,6 +29,9 @@ export default async function Page(props:{
                     ))}
                 </ul>
             </CardContent>
+            <CardFooter>
+                <Link href="/formations">Back</Link>
+            </CardFooter>
         </Card>
     </PageLayout>
     );
