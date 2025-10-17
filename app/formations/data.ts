@@ -10,12 +10,12 @@ export type Video = {
 	lessons: Lesson[];
 };
 
-export const videos: Video[] = [
+export const VIDEOS: Video[] = [
 	{
 		id: 'video-1',
 		title: 'Fondamentale',
 		lessons: [
-			{ id: 'v1-l1', title: 'Introduction', href: '/formations/video-1' },
+			{ id: 'v1-l1', title: 'Introduction' + 'yaaaaaaaaaaa', href: '/formations/video-1' },
 		],
 	},
 	{
@@ -34,5 +34,19 @@ export const videos: Video[] = [
 	},
 ];
 
-export default videos;
 
+export type Caca = {
+    id: string;
+    title:  string;
+    lessons: Lesson[];
+};
+export const CACA: Caca[] = [
+
+    {
+        id: 'prout-1',
+        title: 'Le gros proute sa mère',
+        lessons: [
+            { id: 'page caca', title: 'caca', href: '/formations/prout-1'}
+        ]
+    }
+];
